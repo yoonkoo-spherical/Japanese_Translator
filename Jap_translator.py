@@ -8,7 +8,7 @@ import io
 from streamlit_mic_recorder import mic_recorder
 
 # 페이지 설정
-st.set_page_config(page_title="일본어 번역기", layout="mobile")
+st.set_page_config(page_title="일본어 번역기", layout="centered")
 
 # OCR 리더 로드 (캐싱 적용, CPU 모드)
 @st.cache_resource
@@ -115,4 +115,5 @@ with tab3:
                     trans = do_translate(text, 'ko')
                     st.success(f"🇰🇷 번역: {trans}")
             except:
+
                 st.error("인식 실패. 다시 시도해주세요.")
