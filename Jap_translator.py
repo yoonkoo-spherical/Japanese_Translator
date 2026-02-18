@@ -31,7 +31,7 @@ except Exception:
 @st.cache_resource
 def get_model():
     return genai.GenerativeModel(
-        model_name='gemma-3-12b-it',
+        model_name='gemini-flash-latest',
         generation_config={
             "temperature": 0.1,  # 속도 및 일관성을 위해 낮게 설정
             "max_output_tokens": 1024,
@@ -178,6 +178,7 @@ with tab3:
                         display_result_card("🇰🇷 한국어 번역 결과", res.text)
             except Exception:
                 st.error("인식에 실패했습니다.")
+
 
 
 
