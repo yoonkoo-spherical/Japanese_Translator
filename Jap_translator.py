@@ -24,7 +24,7 @@ except Exception:
 # 8b 모델은 기존 Flash보다 가볍고 응답 속도가 훨씬 빠릅니다.
 @st.cache_resource
 def get_model():
-    return genai.GenerativeModel('gemini-1.5-flash-8b')
+    return genai.GenerativeModel('gemini-flash-lite-latest')
 
 model = get_model()
 
@@ -122,3 +122,4 @@ with tab3:
                     st.success(f"🇰🇷 {res.text}")
             except:
                 st.error("인식 실패")
+
