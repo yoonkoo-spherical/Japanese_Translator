@@ -62,4 +62,103 @@ uploaded_files = st.file_uploader(
 
 # 6. 파일 처리 및 초기 분석
 if uploaded_files and st.button("파일 분석 시작"):
-    # 이미
+    # 이미 분석한 파일이면 재분석 방지 (선택 사항)
+    current_files = [f.name for f in uploaded_files]
+    if st.session_state.processed_files == current_files:
+        st.warning("이미 분석된 파일들입니다. 아래 채팅을 이용하세요.")
+    else:
+        with st.spinner("파일을 Google 서버에 업로드하고 분석 중입니다..."):
+            try:
+                upload_refs = []
+                progress_bar = st.progress(0)
+                
+                for i, uploaded_file in enumerate(uploaded_files):
+                    # 임시 파일 저장
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+                        tmp_file.write(uploaded_file.getvalue())
+                        tmp_path = tmp_file.name
+                    
+                    # [수정됨] 파일 업로드 (이름표 부착)
+                    # display_name을 설정해야 나중에 cleanup 할 때 파일 식별이 쉽습니다.
+                    upload_obj = client.files.upload(
+                        file=tmp_path,
+                        config={'display_name': uploaded_file.name}
+                    )
+                    
+                    # 대기
+                    while upload_obj.state.name == "PROCESSING":
+                        time.sleep(1)
+                        upload_obj = client.files.get(name=upload_obj.name)
+                    
+                    upload_refs.append(upload_obj)
+                    os.remove(tmp_path)
+                    progress_bar.progress((i + 1) / len(uploaded_files))
+                
+                # [수정됨] 채팅 세션 생성 (모델명 변경)
+                chat = client.chats.create(
+                    model="gemini-flash-latest",
+                    config={
+                        "system_instruction": "당신은 반도체 물리학 전문가입니다. 수식은 LaTeX 문법($...$)을 사용하여 명확하게 표현하세요.",
+                    }
+                )
+                
+                # 배치 프롬프트 전송
+                initial_prompt = upload_refs + [
+                    "1. Analyze all uploaded PDF files.",
+                    "2. Provide a detailed summary for EACH file (3 paragraphs: Research Objective, Methodology, Conclusion).",
+                    "3. Use LaTeX for math equations.",
+                    "4. Output format: ## [Filename]\n(Summary...)"
+                ]
+                
+                response = chat.send_message(initial_prompt)
+                
+                # 세션 저장
+                st.session_state.chat_session = chat
+                st.session_state.processed_files = current_files
+                
+                # 첫 응답 기록
+                st.session_state.chat_history = [{"role": "assistant", "text": response.text}]
+                
+                st.success("분석 완료! 채팅을 시작하세요.")
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"오류 발생: {e}")
+
+# 7. 채팅 인터페이스
+for message in st.session_state.chat_history:
+    with st.chat_message(message["role"]):
+        st.markdown(message["text"])
+
+if prompt := st.chat_input("질문하세요..."):
+    if not st.session_state.chat_session:
+        st.error("먼저 파일을 업로드하고 분석을 시작하세요.")
+    else:
+        st.session_state.chat_history.append({"role": "user", "text": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+            
+        with st.chat_message("assistant"):
+            with st.spinner("생각 중..."):
+                try:
+                    # 캐싱된 client 덕분에 연결이 유지됨
+                    response = st.session_state.chat_session.send_message(prompt)
+                    st.markdown(response.text)
+                    st.session_state.chat_history.append({"role": "assistant", "text": response.text})
+                except Exception as e:
+                    st.error(f"응답 실패: {e}")
+                    # 세션 만료 시 복구 제안
+                    if "client has been closed" in str(e):
+                        st.warning("세션이 만료되었습니다. '파일 분석 시작'을 다시 눌러주세요.")
+
+# 8. 저장 버튼
+if st.sidebar.button("대화 내용 저장 (.md)"):
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    filename = f"Gemini_Chat_{timestamp}.md"
+    full_text = ""
+    for msg in st.session_state.chat_history:
+        role = "User" if msg["role"] == "user" else "Gemini"
+        full_text += f"\n\n### {role}:\n{msg['text']}"
+    with open(filename, "w", encoding="utf-8") as f:
+        f.write(full_text)
+    st.sidebar.success(f"저장 완료: {filename}")
