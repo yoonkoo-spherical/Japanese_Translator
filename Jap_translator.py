@@ -27,7 +27,7 @@ except Exception:
 @st.cache_resource
 def get_model():
     try:
-        return genai.GenerativeModel('gemini-flash-lite-latest')
+        return genai.GenerativeModel('gemini-flash-latest')
     except:
         return genai.GenerativeModel('gemini-flash-latest')
 
@@ -223,4 +223,5 @@ with tab3:
 
             except Exception:
                 st.error("음성 인식 실패. 다시 시도해주세요.")
+
 
