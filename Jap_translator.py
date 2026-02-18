@@ -15,7 +15,6 @@ st.set_page_config(page_title="Ultra-Fast AI 통역기", layout="centered")
 
 @st.cache_resource
 def get_client():
-    """API 클라이언트를 메모리에 상주시켜 연결 속도를 향상시킴"""
     if "GEMINI_API_KEY" in st.secrets:
         return genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
     else:
@@ -24,16 +23,15 @@ def get_client():
 
 client = get_client()
 
-# 제공된 목록 중 가장 빠르고 경량화된 모델 선택
-# gemini-2.0-flash-lite 혹은 gemini-2.0-flash-lite-001 권장
-SELECTED_MODEL = "gemini-2.0-flash-lite"
+# 사용자 목록에 있는 'gemini-flash-latest'(1.5 Flash)를 사용합니다.
+# 만약 이 모델이 느리다면 "gemini-2.5-flash-lite"로 교체해 보십시오.
+SELECTED_MODEL = "gemini-flash-latest"
 
 # ==========================================
 # 2. UI 및 유틸리티
 # ==========================================
 
 def display_card(title, main, sub=None):
-    """가독성을 극대화한 검은색 텍스트 카드 UI"""
     html = f"""
     <div style="padding: 15px; border-radius: 10px; background-color: #ffffff; 
                 border: 1px solid #ddd; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
@@ -45,10 +43,8 @@ def display_card(title, main, sub=None):
     st.markdown(html, unsafe_allow_html=True)
 
 def stream_translator(contents, placeholder, title_prefix="🇯🇵 일본어"):
-    """모든 스트리밍 응답을 통합 처리하는 핵심 함수"""
     full_text = ""
     try:
-        # 스트리밍 요청 개시
         stream = client.models.generate_content_stream(
             model=SELECTED_MODEL,
             contents=contents,
@@ -58,10 +54,8 @@ def stream_translator(contents, placeholder, title_prefix="🇯🇵 일본어"):
         for chunk in stream:
             if chunk.text:
                 full_text += chunk.text
-                # 실시간 마크다운 출력으로 체감 속도 향상
-                placeholder.write(f"⌛ **생성 중:** {full_text}")
+                placeholder.write(f"⌛ **번역 중:** {full_text}")
         
-        # 완료 후 최종 가독성 카드 출력
         placeholder.empty()
         if "|" in full_text:
             parts = full_text.split('|')
@@ -72,16 +66,15 @@ def stream_translator(contents, placeholder, title_prefix="🇯🇵 일본어"):
             display_card(f"{title_prefix} 결과", full_text)
             
     except Exception as e:
-        placeholder.error(f"❌ API 통신 오류: {e}")
+        st.error(f"❌ API 에러 발생: {e}")
 
 # ==========================================
-# 3. 기능별 Fragment (부분 실행 단위)
+# 3. 기능별 Fragment
 # ==========================================
 
 @st.fragment
 def fragment_text():
-    """텍스트 번역 영역: 입력 시 전체 페이지 Rerun 방지"""
-    text_input = st.text_area("한국어 입력", placeholder="번역할 문장을 입력하십시오.", key="txt_area")
+    text_input = st.text_area("한국어 입력", placeholder="번역할 문장 입력", key="txt_area")
     if st.button("즉시 번역", use_container_width=True):
         if text_input:
             out = st.empty()
@@ -90,7 +83,6 @@ def fragment_text():
 
 @st.fragment
 def fragment_image():
-    """사진 분석 영역"""
     file = st.file_uploader("사진 업로드", type=['jpg', 'png', 'webp'], key="img_upl")
     if file:
         img = Image.open(file)
@@ -102,7 +94,6 @@ def fragment_image():
 
 @st.fragment
 def fragment_voice():
-    """음성 통역 영역"""
     c1, c2 = st.columns(2)
     with c1:
         st.info("🇰🇷 한국어")
@@ -146,9 +137,8 @@ def fragment_voice():
 # ==========================================
 # 4. 메인 레이아웃
 # ==========================================
-
 st.title("🇯🇵 실시간 최적화 통역기")
-st.caption(f"사용 중인 모델: {SELECTED_MODEL} | Streaming On")
+st.caption(f"사용 모델: {SELECTED_MODEL} (1.5 Flash)")
 
 tab1, tab2, tab3 = st.tabs(["📝 텍스트", "📸 사진", "🎤 대화"])
 
