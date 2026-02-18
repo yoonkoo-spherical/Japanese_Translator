@@ -4,7 +4,5 @@ SpeechRecognition
 streamlit-mic-recorder
 Pillow
 numpy
-python-dotenv
 pydub
-
-
+gTTS
