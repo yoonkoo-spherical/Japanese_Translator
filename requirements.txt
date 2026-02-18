@@ -1,8 +1,9 @@
 streamlit
-google-genai
+google-generativeai
 SpeechRecognition
 streamlit-mic-recorder
 Pillow
 numpy
 python-dotenv
+
 
