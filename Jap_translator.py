@@ -5,146 +5,120 @@ from PIL import Image
 import io
 from streamlit_mic_recorder import mic_recorder
 
-# 1. 페이지 설정 (모바일 화면 최적화)
-st.set_page_config(page_title="Gemini 일본어 번역기", layout="centered")
+# 1. 페이지 설정
+st.set_page_config(page_title="초고속 일본어 번역기", layout="centered")
 
 # 2. API 키 보안 로드
-# 로컬에서는 .streamlit/secrets.toml을, 배포 환경에서는 Streamlit Secrets를 참조
 try:
     if "GEMINI_API_KEY" in st.secrets:
         GENAI_API_KEY = st.secrets["GEMINI_API_KEY"]
         genai.configure(api_key=GENAI_API_KEY)
     else:
-        st.error("API 키가 설정되지 않았습니다. Streamlit 설정을 확인하세요.")
+        st.error("API 키 설정을 확인하세요.")
         st.stop()
-except FileNotFoundError:
+except Exception:
     st.error("Secrets 파일을 찾을 수 없습니다.")
     st.stop()
 
-# 3. Gemini 모델 설정 (Gemini 1.5 Flash 사용 - 속도 및 비용 효율성)
+# 3. 모델 설정 (속도 최적화: Flash-8b 모델 사용)
+# 8b 모델은 기존 Flash보다 가볍고 응답 속도가 훨씬 빠릅니다.
 @st.cache_resource
 def get_model():
-    return genai.GenerativeModel('gemini-flash-latest')
+    return genai.GenerativeModel('gemini-1.5-flash-8b')
 
 model = get_model()
 
-# 4. UI 헤더
-st.title("🇯🇵 AI 일본어 통역기")
-st.caption("Gemini Flash 기반 (텍스트 / 갤러리 사진 / 음성)")
+# 이미지 리사이징 함수 (속도 향상 핵심)
+def resize_image(image, max_width=800):
+    width_percent = (max_width / float(image.size[0]))
+    h_size = int((float(image.size[1]) * float(width_percent)))
+    return image.resize((max_width, h_size), Image.Resampling.LANCZOS)
 
-# 5. 탭 구성
-tab1, tab2, tab3 = st.tabs(["📝 텍스트", "🖼️ 사진(갤러리)", "🎤 음성 대화"])
+st.title("⚡ 초고속 AI 통역기")
+
+# 탭 구성
+tab1, tab2, tab3 = st.tabs(["📝 텍스트", "📷 사진", "🎤 음성"])
 
 # --- [기능 1] 텍스트 번역 ---
 with tab1:
-    st.markdown("##### 🇰🇷 한국어 ↔ 🇯🇵 일본어")
-    text_input = st.text_area("내용을 입력하세요 (자동 감지)", height=150)
-    
-    if st.button("번역하기", key="btn_text"):
+    text_input = st.text_area("입력 (자동감지)", height=100)
+    if st.button("⚡ 번역", key="btn_text"):
         if text_input:
-            with st.spinner("Gemini가 번역 중입니다..."):
+            with st.spinner(".."):
                 try:
+                    # 프롬프트를 간결하게 하여 생성 토큰을 줄임
                     prompt = f"""
-                    You are a professional translator.
-                    Translate the following text naturally.
-                    - If the input is Korean, translate it to Japanese.
-                    - If the input is Japanese, translate it to Korean.
-                    
-                    Input text: {text_input}
+                    Translate efficiently.
+                    Korean -> Japanese
+                    Japanese -> Korean
+                    Text: {text_input}
                     """
                     response = model.generate_content(prompt)
                     st.success(response.text)
                 except Exception as e:
-                    st.error(f"오류 발생: {e}")
+                    st.error(f"Error: {e}")
 
-# --- [기능 2] 사진 번역 (Gemini Vision) ---
+# --- [기능 2] 사진 번역 (이미지 압축 적용) ---
 with tab2:
-    st.markdown("##### 📸 사진을 업로드하면 텍스트를 추출하여 번역합니다")
-    # 모바일에서는 이 위젯을 누르면 '카메라'와 '미디어(갤러리)' 중 선택 가능
-    uploaded_file = st.file_uploader("이미지 선택", type=['jpg', 'jpeg', 'png', 'webp'])
+    uploaded_file = st.file_uploader("사진 선택", type=['jpg', 'png', 'webp'])
     
     if uploaded_file is not None:
         image = Image.open(uploaded_file)
-        st.image(image, caption="선택된 이미지", use_column_width=True)
         
-        if st.button("🔍 분석 및 번역 요청"):
-            with st.spinner("이미지 분석 중..."):
+        # 이미지 리사이징 (전송 속도 및 분석 속도 향상)
+        resized_image = resize_image(image)
+        st.image(resized_image, caption="압축된 이미지", use_column_width=True)
+        
+        if st.button("⚡ 해석"):
+            with st.spinner("분석 중.."):
                 try:
-                    # 이미지와 프롬프트를 함께 전달
+                    # 요약 요청을 제거하고 번역만 요청하여 속도 확보
                     image_prompt = """
-                    이 이미지 내의 일본어 텍스트를 모두 찾아서 한국어로 번역해 주세요.
-                    여행자가 이해하기 쉽도록 다음 형식으로 출력해 주세요:
-                    
-                    1. [핵심 내용 요약]
-                    2. [주요 텍스트 원문] -> [한국어 번역]
+                    Locate Japanese text and translate to Korean.
+                    Format: [Original] -> [Translation]
                     """
-                    response = model.generate_content([image_prompt, image])
+                    response = model.generate_content([image_prompt, resized_image])
                     st.markdown(response.text)
                 except Exception as e:
-                    st.error(f"이미지 처리 중 오류 발생: {e}")
+                    st.error(f"Error: {e}")
 
-# --- [기능 3] 음성 통역 (STT + Gemini) ---
+# --- [기능 3] 음성 통역 ---
 with tab3:
-    st.markdown("##### 🎤 말하면 번역해줍니다")
-    
     col1, col2 = st.columns(2)
-    
-    # 한국어 녹음
     with col1:
-        st.info("🇰🇷 나 (한국어)")
-        audio_kr = mic_recorder(
-            start_prompt="🔴 말하기",
-            stop_prompt="⏹️ 멈춤",
-            key='recorder_kr',
-            just_once=False,
-            use_container_width=True
-        )
-
-    # 일본어 녹음
+        st.info("🇰🇷 나")
+        audio_kr = mic_recorder(start_prompt="🔴 말하기", stop_prompt="⏹️", key='kr')
     with col2:
-        st.warning("🇯🇵 상대 (일본어)")
-        audio_jp = mic_recorder(
-            start_prompt="🔴 말하기",
-            stop_prompt="⏹️ 멈춤",
-            key='recorder_jp',
-            just_once=False,
-            use_container_width=True
-        )
+        st.warning("🇯🇵 상대")
+        audio_jp = mic_recorder(start_prompt="🔴 말하기", stop_prompt="⏹️", key='jp')
 
-    # 한국어 음성 처리 로직
     if audio_kr:
-        with st.spinner("음성 인식 및 번역 중..."):
-            audio_bytes = io.BytesIO(audio_kr['bytes'])
-            r = sr.Recognizer()
+        with st.spinner(".."):
             try:
+                audio_bytes = io.BytesIO(audio_kr['bytes'])
+                r = sr.Recognizer()
                 with sr.AudioFile(audio_bytes) as source:
                     audio_data = r.record(source)
-                    # 1. Google STT (Speech-to-Text)
                     stt_text = r.recognize_google(audio_data, language='ko-KR')
-                    st.write(f"🗣️ 인식됨: **{stt_text}**")
+                    st.write(f"🗣️ {stt_text}")
                     
-                    # 2. Gemini 번역
-                    trans_prompt = f"Translate this Korean text to Japanese naturally for conversation: {stt_text}"
-                    response = model.generate_content(trans_prompt)
-                    st.success(f"🇯🇵 번역: {response.text}")
-            except Exception:
-                st.error("음성을 명확히 인식하지 못했습니다. 다시 시도해주세요.")
+                    # 짧고 명확한 지시
+                    res = model.generate_content(f"Translate Korean to Japanese: {stt_text}")
+                    st.success(f"🇯🇵 {res.text}")
+            except:
+                st.error("인식 실패")
 
-    # 일본어 음성 처리 로직
     if audio_jp:
-        with st.spinner("음성 인식 및 번역 중..."):
-            audio_bytes = io.BytesIO(audio_jp['bytes'])
-            r = sr.Recognizer()
+        with st.spinner(".."):
             try:
+                audio_bytes = io.BytesIO(audio_jp['bytes'])
+                r = sr.Recognizer()
                 with sr.AudioFile(audio_bytes) as source:
                     audio_data = r.record(source)
-                    # 1. Google STT (Speech-to-Text)
                     stt_text = r.recognize_google(audio_data, language='ja-JP')
-                    st.write(f"🗣️ 인식됨: **{stt_text}**")
+                    st.write(f"🗣️ {stt_text}")
                     
-                    # 2. Gemini 번역
-                    trans_prompt = f"Translate this Japanese text to Korean naturally for conversation: {stt_text}"
-                    response = model.generate_content(trans_prompt)
-                    st.success(f"🇰🇷 번역: {response.text}")
-            except Exception:
-                st.error("음성을 명확히 인식하지 못했습니다. 다시 시도해주세요.")
+                    res = model.generate_content(f"Translate Japanese to Korean: {stt_text}")
+                    st.success(f"🇰🇷 {res.text}")
+            except:
+                st.error("인식 실패")
