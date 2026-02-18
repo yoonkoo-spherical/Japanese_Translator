@@ -35,7 +35,7 @@ except Exception as e:
 # 2. 핵심 유틸리티 함수
 # ==========================================
 
-def ask_gemini_v2(contents, model_id="gemini-2.0-flash-lite"):
+def ask_gemini_v2(contents, model_id="gemini-flash-latest"):
     """
     최신 SDK 기반의 안전한 API 호출 함수
     """
@@ -177,6 +177,7 @@ with tab3:
                         display_card("🇰🇷 한국어 결과", res.text)
             except:
                 st.error("인식 실패")
+
 
 
 
