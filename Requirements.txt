@@ -1,8 +1,0 @@
-streamlit
-deep-translator
-easyocr
-SpeechRecognition
-Pillow
-numpy
-streamlit-mic-recorder
-opencv-python-headless
