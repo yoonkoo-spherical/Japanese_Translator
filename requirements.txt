@@ -1,8 +1,6 @@
 streamlit
-deep-translator
-easyocr
+google-generativeai
 SpeechRecognition
+streamlit-mic-recorder
 Pillow
 numpy
-streamlit-mic-recorder
-opencv-python-headless
