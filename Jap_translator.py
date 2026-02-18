@@ -118,7 +118,7 @@ def display_kr_result(korean):
 # 4. 메인 화면 구성
 # ==========================================
 
-st.title("🇯🇵 심플 AI 통역기")
+st.title("일본어 통역기")
 
 tab1, tab2, tab3 = st.tabs(["📝 텍스트", "📷 사진", "🎤 대화"])
 
@@ -223,3 +223,4 @@ with tab3:
 
             except Exception:
                 st.error("음성 인식 실패. 다시 시도해주세요.")
+
