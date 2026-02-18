@@ -1,5 +1,6 @@
 import streamlit as st
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import speech_recognition as sr
 from PIL import Image
 import io
@@ -8,68 +9,66 @@ from streamlit_mic_recorder import mic_recorder
 from pydub import AudioSegment
 
 # ==========================================
-# 1. 환경 설정 및 세션 상태 초기화
+# 1. 환경 설정 및 클라이언트 초기화
 # ==========================================
-st.set_page_config(page_title="안정화 AI 통역기", layout="centered")
+st.set_page_config(page_title="Pro AI 통역기", layout="centered")
 
-# 중복 실행 방지를 위한 세션 상태 관리
+# 세션 상태 초기화
 if "last_request_time" not in st.session_state:
     st.session_state.last_request_time = 0
+if "is_processing" not in st.session_state:
+    st.session_state.is_processing = False
 
-# API 키 설정
+# API 키 및 클라이언트 설정
 try:
     if "GEMINI_API_KEY" in st.secrets:
-        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+        # 최신 google-genai 클라이언트 생성
+        client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
     else:
-        st.error("⚠️ API 키가 설정되지 않았습니다.")
+        st.error("⚠️ Secrets에서 GEMINI_API_KEY를 확인하세요.")
         st.stop()
-except Exception:
-    st.error("⚠️ Secrets 설정 오류가 발생했습니다.")
+except Exception as e:
+    st.error(f"⚠️ 초기화 오류: {e}")
     st.stop()
 
-# 모델 설정 (요청하신 gemini-flash-latest 사용)
-@st.cache_resource
-def get_model():
-    return genai.GenerativeModel(
-        model_name='gemini-flash-latest',
-        generation_config={
-            "temperature": 0.1,  # 속도 및 일관성을 위해 낮게 설정
-            "max_output_tokens": 1024,
-        }
-    )
-
-model = get_model()
-
 # ==========================================
-# 2. 핵심 로직: 429 및 무한루프 방지
+# 2. 핵심 유틸리티 함수
 # ==========================================
 
-def ask_gemini_safe(content):
+def ask_gemini_v2(contents, model_id="gemini-flash-latest"):
     """
-    중복 호출을 방지하고 타임아웃을 적용한 안전한 API 호출 함수
+    최신 SDK 기반의 안전한 API 호출 함수
     """
-    # 1. 너무 짧은 간격(2초 이내)의 중복 호출 차단
-    current_time = time.time()
-    if current_time - st.session_state.last_request_time < 2:
+    # 중복 요청 방지 (2초 쿨다운)
+    curr_time = time.time()
+    if curr_time - st.session_state.last_request_time < 2:
         return None
     
-    st.session_state.last_request_time = current_time
+    if st.session_state.is_processing:
+        return None
+
+    st.session_state.is_processing = True
+    st.session_state.last_request_time = curr_time
 
     try:
-        # 10초 내 응답 없으면 끊기 (수 분간 대기하는 현상 방지)
-        response = model.generate_content(
-            content, 
-            request_options={"timeout": 15}
+        # 최신 호출 방식 적용
+        response = client.models.generate_content(
+            model=model_id,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                temperature=0.1,
+                max_output_tokens=1024
+            )
         )
         return response
     except Exception as e:
         if "429" in str(e):
-            st.warning("⚠️ 현재 요청이 많습니다. 10초만 기다려주세요.")
-        elif "deadline" in str(e).lower():
-            st.error("⏰ 연결 시간이 초과되었습니다. 다시 시도해 주세요.")
+            st.warning("⚠️ 사용량 초과. 잠시 후 시도하세요.")
         else:
-            st.error(f"❌ 오류가 발생했습니다: {e}")
+            st.error(f"⚠️ 서버 응답 오류: {e}")
         return None
+    finally:
+        st.session_state.is_processing = False
 
 def convert_audio_to_wav(audio_bytes):
     try:
@@ -88,98 +87,93 @@ def parse_response(text):
     return text, "", ""
 
 # ==========================================
-# 3. 시각적 가독성을 높인 결과 표시 (검은 글씨 카드)
+# 3. 가독성 중심 UI 컴포넌트 (검은색 글자 카드)
 # ==========================================
 
-def display_result_card(title, main_text, sub_text=None, footer=None):
-    html_code = f"""
+def display_card(title, main, sub=None, footer=None):
+    html = f"""
     <div style="padding: 20px; border-radius: 12px; background-color: #ffffff; 
                 border: 1px solid #e0e0e0; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
         <p style="color: #666; font-size: 14px; margin-bottom: 5px;">{title}</p>
-        <p style="color: #000000; font-size: 26px; font-weight: bold; margin-bottom: 8px; line-height: 1.4;">{main_text}</p>
-        {f'<div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px;"><p style="color: #444; font-size: 16px; margin: 0;"><b>{sub_text}</b></p></div>' if sub_text else ''}
+        <p style="color: #000000; font-size: 26px; font-weight: bold; margin-bottom: 8px; line-height: 1.4;">{main}</p>
+        {f'<div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px;"><p style="color: #444; font-size: 16px; margin: 0;"><b>{sub}</b></p></div>' if sub else ''}
         {f'<p style="color: #888; font-size: 13px; margin-top: 10px; text-align: right;">{footer}</p>' if footer else ''}
     </div>
     """
-    st.markdown(html_code, unsafe_allow_html=True)
+    st.markdown(html, unsafe_allow_html=True)
 
 # ==========================================
-# 4. UI 레이아웃
+# 4. 메인 화면 구성
 # ==========================================
 
-st.title("일본어 실시간 통역기")
+st.title("🇯🇵 Pro AI 통역기")
+st.caption("SDK 3.0 업그레이드 완료 | 지연 시간 최적화")
 
 tab1, tab2, tab3 = st.tabs(["📝 텍스트", "📸 사진", "🎤 대화"])
 
+# 텍스트 번역
 with tab1:
-    text_input = st.text_area("한국어 내용을 입력하세요", height=100, key="text_input_area")
+    text_in = st.text_area("한국어 입력", height=100, key="txt_in")
     if st.button("번역하기", use_container_width=True):
-        if text_input:
-            with st.spinner("번역 중..."):
-                prompt = f"Translate Korean to Japanese. Format: Japanese|Romaji|Meaning. Input: {text_input}"
-                res = ask_gemini_safe(prompt)
+        if text_in:
+            with st.spinner(".."):
+                prompt = f"Translate Korean to Japanese. Format: Japanese|Romaji|Meaning. Input: {text_in}"
+                res = ask_gemini_v2(prompt)
                 if res:
                     jp, rom, mean = parse_response(res.text)
-                    display_result_card("🇯🇵 일본어 번역 결과", jp, rom, f"뜻: {mean}")
+                    display_card("🇯🇵 일본어 결과", jp, rom, f"뜻: {mean}")
 
+# 사진 번역
 with tab2:
-    uploaded_file = st.file_uploader("사진 업로드", type=['jpg', 'png', 'webp'])
-    if uploaded_file:
-        img = Image.open(uploaded_file)
+    file = st.file_uploader("사진 선택", type=['jpg', 'png', 'webp'])
+    if file:
+        img = Image.open(file)
         st.image(img, use_column_width=True)
-        if st.button("사진 속 일본어 해석", use_container_width=True):
-            with st.spinner("이미지 분석 중..."):
+        if st.button("사진 해석하기", use_container_width=True):
+            with st.spinner(".."):
                 prompt = "Find Japanese text and translate to Korean. Format: 1. [Summary] 2. [Original] -> [Translation]"
-                res = ask_gemini_safe([prompt, img])
+                res = ask_gemini_v2([prompt, img])
                 if res:
                     st.markdown("---")
                     st.markdown(res.text)
 
+# 음성 대화
 with tab3:
-    col1, col2 = st.columns(2)
-    with col1:
-        st.info("🇰🇷 나 (한국어)")
-        audio_kr = mic_recorder(start_prompt="🎤 말하기", stop_prompt="⏹️ 멈춤", key='kr_mic')
-    with col2:
-        st.warning("🇯🇵 상대 (일본어)")
-        audio_jp = mic_recorder(start_prompt="🎤 말하기", stop_prompt="⏹️ 멈춤", key='jp_mic')
+    c1, c2 = st.columns(2)
+    with c1:
+        st.info("🇰🇷 한국어")
+        aud_kr = mic_recorder(start_prompt="🎤 말하기", stop_prompt="⏹️ 멈춤", key='mic_kr')
+    with c2:
+        st.warning("🇯🇵 일본어")
+        aud_jp = mic_recorder(start_prompt="🎤 말하기", stop_prompt="⏹️ 멈춤", key='mic_jp')
 
-    # 한국어 음성 처리
-    if audio_kr:
-        with st.spinner("음성 인식 중..."):
-            wav = convert_audio_to_wav(audio_kr['bytes'])
+    if aud_kr:
+        with st.spinner(".."):
+            wav = convert_audio_to_wav(aud_kr['bytes'])
             r = sr.Recognizer()
             try:
-                with sr.AudioFile(wav) as source:
-                    audio_data = r.record(source)
-                    stt = r.recognize_google(audio_data, language='ko-KR')
-                    st.caption(f"인식된 내용: {stt}")
-                    
-                    res = ask_gemini_safe(f"Translate to Japanese. Format: Japanese|Romaji|Meaning. Input: {stt}")
+                with sr.AudioFile(wav) as src:
+                    data = r.record(src)
+                    stt = r.recognize_google(data, language='ko-KR')
+                    st.caption(f"인식: {stt}")
+                    res = ask_gemini_v2(f"Translate to Japanese. Format: Japanese|Romaji|Meaning. Input: {stt}")
                     if res:
                         jp, rom, mean = parse_response(res.text)
-                        display_result_card("🇯🇵 통역 결과", jp, rom, f"뜻: {mean}")
-            except Exception:
-                st.error("인식에 실패했습니다.")
+                        display_card("🇯🇵 번역 결과", jp, rom, f"뜻: {mean}")
+            except:
+                st.error("인식 실패")
 
-    # 일본어 음성 처리
-    if audio_jp:
-        with st.spinner("음성 인식 중..."):
-            wav = convert_audio_to_wav(audio_jp['bytes'])
+    if aud_jp:
+        with st.spinner(".."):
+            wav = convert_audio_to_wav(aud_jp['bytes'])
             r = sr.Recognizer()
             try:
-                with sr.AudioFile(wav) as source:
-                    audio_data = r.record(source)
-                    stt = r.recognize_google(audio_data, language='ja-JP')
-                    st.caption(f"인식된 내용: {stt}")
-                    
-                    res = ask_gemini_safe(f"Translate Japanese to Korean: {stt}")
+                with sr.AudioFile(wav) as src:
+                    data = r.record(src)
+                    stt = r.recognize_google(data, language='ja-JP')
+                    st.caption(f"인식: {stt}")
+                    res = ask_gemini_v2(f"Translate Japanese to Korean: {stt}")
                     if res:
-                        display_result_card("🇰🇷 한국어 번역 결과", res.text)
-            except Exception:
-                st.error("인식에 실패했습니다.")
-
-
-
-
-
+                        display_card("🇰🇷 한국어 결과", res.text)
+            except:
+                st.error("인식 실패")
