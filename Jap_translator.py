@@ -23,7 +23,7 @@ client = get_client()
 
 # [중요] 20회 제한이 걸린 'latest' 대신, 안정적인 2.0-flash를 직접 지정합니다.
 # 만약 이 모델도 limit: 0 이라면 "gemini-pro-latest"로 변경해 보세요.
-SELECTED_MODEL = "gemini-pro-latest"
+SELECTED_MODEL = "gemini-flash-lite-latest"
 
 # 2. UI 및 유틸리티
 def display_card(title, main, sub=None):
@@ -125,5 +125,6 @@ tab1, tab2, tab3 = st.tabs(["📝 텍스트", "📸 사진", "🎤 대화"])
 with tab1: fragment_text()
 with tab2: fragment_image()
 with tab3: fragment_voice()
+
 
 
